@@ -1,0 +1,352 @@
+PBIX: Blinkit_The_Developer_Dashboard
+====================================
+
+Measure Name | Table | DAX Expression
+
+Current_Year | Configuration | 
+var yr = 2025
+var Sys_Year = YEAR([System_Date])
+RETURN IF(ISFILTERED(Auto_Date[Options]), Sys_Year, yr)
+
+previous_year | Configuration | [Current_Year]-1
+
+System_Date | Configuration | NOW()
+
+YTD_Month | Configuration | 
+var Sys_Month = MONTH([System_Date])
+var Selected_YTD_Month = SELECTEDVALUE(Manual_Calendar[MonthIndex])
+RETURN IF(ISFILTERED(Auto_Date[Options]),Sys_Month,Selected_YTD_Month)
+
+year_before_previous | Configuration | [Current_Year] -2
+
+Value | Sales_Measures | SUM(MasterTable[Value])
+
+YTD | Sales_Measures | var YTD_SYS_Month = [YTD_Month]
+RETURN
+CALCULATE([Value],'Calendar'[MonthIndex]<=YTD_SYS_Month)
+
+
+Period_Value | Sales_Measures | 
+    var selected_period = [Selected_Period]
+    var selected_month = [YTD_Month]
+    var Start_Index = selected_month - selected_period
+    var Period_Value = CALCULATE([Value],'Calendar'[MonthIndex]>= Start_Index,
+    'Calendar'[MonthIndex]< selected_month)
+
+ RETURN IF([Selected_Period] = 0, [YTD], Period_Value)
+
+Current_year_value | Sales_Measures | var Curryear = [Current_Year]
+RETURN
+CALCULATE([Period_Value],'Calendar'[Year] = Curryear)
+
+Previous_year_value | Sales_Measures | var prev_year = [previous_year]
+RETURN
+CALCULATE([Period_Value],'Calendar'[Year] = prev_year)
+
+CY_PY_Growth% | Sales_Measures | var val =DIVIDE([Current_year_value]-[Previous_year_value],[Previous_year_value])
+
+return IF(ISBLANK(val),0,val)
+
+Positive_&_Negative_Growth_BG_Colour | Sales_Measures | IF([CY_PY_Growth%]>=0,"#C2f0c3","#EDADB2")
+
+Positive_&_Negative_Growth_Txt_Colour | Sales_Measures | IF([CY_PY_Growth%]>=0,"#035505","#de6a73")
+
+TopN_Area_by_Value | Sales_Measures | 
+var rank_value = RANKX(ALL(MasterTable[area]), [Period_Value],,DESC)
+var _rank = SELECTEDVALUE(Rank_Table[Value])
+var Rank_Top_N_Value =  IF(rank_value<= _rank, [Period_Value], BLANK())
+
+RETURN IF(_rank = 0, [Period_Value],Rank_Top_N_Value)
+
+TopN_Product_by_Value | Sales_Measures | 
+var rank_value = RANKX(ALL(MasterTable[product_name]), [Period_Value],,DESC)
+var _rank = SELECTEDVALUE(Rank_Table[Value])
+var Rank_Top_N_Value =  IF(rank_value<= _rank, [Period_Value], BLANK())
+
+RETURN IF(_rank = 0, [Period_Value],Rank_Top_N_Value)
+
+Growth_line | Sales_Measures | DIVIDE([Current_year_value]-[Previous_year_value],[Previous_year_value])
+
+Order_ID_Count | Sales_Measures | DISTINCTCOUNT(MasterTable[order_id])
+
+Period_Orders | Sales_Measures | 
+ var selected_period = [Selected_Period]
+    var selected_month = [YTD_Month]
+    var Start_Index = selected_month - selected_period
+    var Period_Value = CALCULATE([Order_ID_Count],'Calendar'[MonthIndex]>= Start_Index,
+    'Calendar'[MonthIndex]< selected_month)
+
+
+ RETURN IF([Selected_Period] = 0, [YTD], Period_Value)
+
+YTD_orders | Sales_Measures | var YTD_SYS_Month = [YTD_Month]
+RETURN
+CALCULATE([Order_ID_Count],'Calendar'[MonthIndex]<=YTD_SYS_Month)
+
+Selected_Period | Manual_Calendar | SELECTEDVALUE(Time_Period[Value])
+
+Sale_and_Current_Year_Title | Dynamic_Titles | [Select_Timeperiod_Label]&" "&[selected_sale_or_qty]&" "&[Current_Year]
+
+selected_sale_or_qty | Dynamic_Titles | SELECTEDVALUE(Value_Options[Value_Type])
+
+Select_Timeperiod_Label | Dynamic_Titles | SELECTEDVALUE(Time_Period[Options])
+
+Sale_and_Previous_Year_Title | Dynamic_Titles | [Select_Timeperiod_Label]&" "&[selected_sale_or_qty]&" "&[previous_year]
+
+Sale_Option_CY_Year_title | Dynamic_Titles | SELECTEDVALUE(Value_Options[Value_Type])&" "&Configuration[Current_Year]
+
+Sale_Option_PY_Year_title | Dynamic_Titles | SELECTEDVALUE(Value_Options[Value_Type])&" "&Configuration[previous_year]
+
+product_rank_title | Dynamic_Titles | SELECTEDVALUE(Rank_Table[Option])&" Products "&[selected_sale_or_qty]
+
+Area_rank_title | Dynamic_Titles | SELECTEDVALUE(Rank_Table[Option])&" Area "&[selected_sale_or_qty]
+
+Customer_rank_title | Dynamic_Titles | SELECTEDVALUE(Rank_Table[Option])&" Customer "&[selected_sale_or_qty]
+
+Order_count_label | Dynamic_Titles | "Customers who order more than "&MAX(Order_Filter_Table[Order_Filter_Table])&" times"
+
+Total_Customer_Count | Customer_Measures | DISTINCTCOUNT(MasterTable[customer_id])
+
+YTD_Customer_count | Customer_Measures | var YTD_SYS_Month = [YTD_Month]
+RETURN
+CALCULATE([Total_Customer_Count],'Calendar'[MonthIndex]<=YTD_SYS_Month)
+
+Period_wise_customers | Customer_Measures | 
+    var selected_period = [Selected_Period]
+    var selected_month = [YTD_Month]
+    var Start_Index = selected_month - selected_period
+    var Period_Value = CALCULATE([Total_Customer_Count],'Calendar'[MonthIndex]>= Start_Index,
+    'Calendar'[MonthIndex]< selected_month)
+
+ RETURN IF([Selected_Period] = 0, [YTD_Customer_count], Period_Value)
+
+Period_customer_cy | Customer_Measures | var cy =[Current_Year]
+ return
+ CALCULATE([Period_wise_customers],'Calendar'[Year]= cy)
+
+Period_customer_py | Customer_Measures | var py =[previous_year]
+ return
+ CALCULATE([Period_wise_customers],'Calendar'[Year]= py)
+
+New_Customers | Customer_Measures | 
+var FilterCustomers = FILTER(
+SUMMARIZE(MasterTable,MasterTable[customer_id]),
+[Previous_year_value]<=0 && [Current_year_value]>0
+)
+RETURN CALCULATE([Period_wise_customers],FilterCustomers)
+
+Lost_Customers | Customer_Measures | 
+var FilterCustomers = FILTER(
+SUMMARIZE(MasterTable,MasterTable[customer_id]),
+[Previous_year_value]>0 && [Current_year_value]<=0
+)
+RETURN CALCULATE([Period_wise_customers],FilterCustomers)
+
+Lost_Customers_sale | Customer_Measures | 
+var FilterCustomers = FILTER(
+SUMMARIZE(MasterTable,MasterTable[customer_id]),
+[Previous_year_value]>0 && [Current_year_value]<=0
+)
+RETURN CALCULATE([Period_Value],FilterCustomers)
+
+New_Customers_sale | Customer_Measures | 
+var FilterCustomers = FILTER(
+SUMMARIZE(MasterTable,MasterTable[customer_id]),
+[Previous_year_value]<=0 && [Current_year_value]>0
+)
+RETURN CALCULATE([Period_Value],FilterCustomers)
+
+TopN_Customer_by_Value | Customer_Measures | 
+var rank_value = RANKX(ALL(MasterTable[customer_name]), [Period_Value],,DESC)
+var _rank = SELECTEDVALUE(Rank_Table[Value])
+var Rank_Top_N_Value =  IF(rank_value<= _rank, [Period_Value], BLANK())
+
+RETURN IF(_rank = 0, [Period_Value],Rank_Top_N_Value)
+
+Customer_Growth | Customer_Measures | var custcy =Customer_Measures[Period_customer_cy] 
+var custpy = Customer_Measures[Period_customer_py]
+
+return DIVIDE(custcy - custpy,custpy)
+
+
+Repeat_Customers | Customer_Measures | 
+var CustomerData = SUMMARIZE(MasterTable, MasterTable[customer_id])
+var FilterObj = 
+FILTER(CustomerData, [Period_Orders]>=2)
+
+RETURN CALCULATE([Period_wise_customers], FilterObj)
+
+
+Repeat_customer_count_CY | Customer_Measures | var CY = [Current_Year]
+RETURN
+CALCULATE([Repeat_Customers],'Calendar'[Year]=CY)
+
+Repeat_customer_count_PY | Customer_Measures | var PY = [previous_year]
+RETURN
+CALCULATE([Repeat_Customers],'Calendar'[Year]=PY)
+
+Repeat_Customers_sale | Customer_Measures | 
+var CustomerData = SUMMARIZE(MasterTable, MasterTable[customer_id])
+var FilterObj = 
+FILTER(CustomerData, [Period_Orders]>=2)
+
+RETURN CALCULATE([Period_Value], FilterObj)
+
+Repeat_customer_sale_CY | Customer_Measures | var CY = [Current_Year]
+RETURN
+CALCULATE([Repeat_Customers_sale],'Calendar'[Year]=CY)
+
+Repeat_customer_sale_PY | Customer_Measures | var PY = [previous_year]
+RETURN
+CALCULATE([Repeat_Customers_sale],'Calendar'[Year]=PY)
+
+Repeat_Customers_Dynamic | Customer_Measures | 
+var order_Count = MAX(Order_Filter_Table[Order_Filter_Table])
+var CustomerData = SUMMARIZE(MasterTable, MasterTable[customer_id])
+var FilterObj = 
+FILTER(CustomerData, [Period_Orders]>= order_Count)
+var val= CALCULATE([Period_wise_customers], FilterObj)
+RETURN IF(ISBLANK(val),0,val)
+
+
+Total_feedbacks | Customer_Measures | DISTINCTCOUNT(MasterTable[feedback_id])
+
+Period_wise_feedbacks | Customer_Measures | 
+    var selected_period = [Selected_Period]
+    var selected_month = [YTD_Month]
+    var Start_Index = selected_month - selected_period
+    var Period_Value = CALCULATE([Total_feedbacks],'Calendar'[MonthIndex]>= Start_Index,
+    'Calendar'[MonthIndex]< selected_month)
+
+
+ RETURN IF([Selected_Period] = 0, [YTD_feedbacks], Period_Value)
+
+YTD_feedbacks | Customer_Measures | var YTD_SYS_Month = [YTD_Month]
+RETURN
+CALCULATE([Total_feedbacks],'Calendar'[MonthIndex]<=YTD_SYS_Month)
+
+Order_Filter_Table Value | Order_Filter_Table | SELECTEDVALUE('Order_Filter_Table'[Order_Filter_Table])
+
+Inventory_Value | Inventory_Measures | SUM(Inventory[Value]) 
+
+Inventory_YTD | Inventory_Measures | var YTD_SYS_Month = [YTD_Month]
+RETURN
+CALCULATE([Inventory_Value],'Calendar'[MonthIndex]<=YTD_SYS_Month)
+
+Inventory_Period_Value | Inventory_Measures | 
+ var selected_period = [Selected_Period]
+ var selected_month = [YTD_Month]
+ var Start_Index = selected_month - selected_period
+
+var Period_Value = CALCULATE([Inventory_Value],'Calendar'[MonthIndex]>= Start_Index,
+'Calendar'[MonthIndex]< selected_month) 
+
+RETURN IF([Selected_Period] = 0, [Inventory_YTD], Period_Value)
+
+
+
+stock_received | Inventory_Measures | CALCULATE([Inventory_Period_Value],Inventory[Stock_Type]="stock_received")
+
+stock_damaged | Inventory_Measures | CALCULATE([Inventory_Period_Value],Inventory[Stock_Type]="damaged_stock")
+
+Available_Stock | Inventory_Measures | [Inventory_Period_Value]- [Period_Value]
+
+sold_stock% | Inventory_Measures | DIVIDE([Period_Value],[Inventory_Period_Value])
+
+Available_Stock_% | Inventory_Measures | DIVIDE([Available_Stock],[Inventory_Period_Value])
+
+Damaged_Stock% | Inventory_Measures | DIVIDE([stock_damaged],[Inventory_Period_Value])
+
+Marketing_YTD | Marketing_Measures | var YTD_SYS_Month = [YTD_Month]
+RETURN
+CALCULATE([Marketing_Value],'Calendar'[MonthIndex]<=YTD_SYS_Month)
+
+Marketing_Value | Marketing_Measures | SUM(Marketing[Value])
+
+Marketing_Period_Value | Marketing_Measures | 
+ var selected_period = [Selected_Period]
+ var selected_month = [YTD_Month]
+ var Start_Index = selected_month - selected_period
+
+var Period_Value = CALCULATE([Marketing_Value],'Calendar'[MonthIndex]>= Start_Index,
+'Calendar'[MonthIndex]< selected_month) 
+
+RETURN IF([Selected_Period] = 0, [Marketing_YTD], Period_Value)
+
+
+Check_Icon | Marketing_Measures | "https://i.posting.cc/xCkwbbNQ/check-5.png"
+
+Total_Orders | Delivery Measures | COUNT(MasterTable[order_id])
+
+Avg_Delivery_Minutes | Delivery Measures | AVERAGE(Delivery[delivery_time_minutes])
+
+On_Time_Delivery | Delivery Measures | CALCULATE(COUNT(MasterTable[order_id]),MasterTable[Delivery_Status] ="On Time")
+
+On_Time_Delivery_Percentge | Delivery Measures | DIVIDE([On_Time_Delivery],[Total_Orders],0)
+
+Delayed_Orders | Delivery Measures | CALCULATE(COUNT(MasterTable[order_id]), MasterTable[Delivery_Status] IN{"Slightly Delayed","Significantly Delayed"})
+
+Delayed_Delivery_Percentge | Delivery Measures | DIVIDE([Delayed_Orders],[Total_Orders],0)
+
+Maximum Delay (Minutes) | Delivery Measures | 
+CALCULATE(
+    MAX(Delivery[delivery_time_minutes]),
+    Delivery[delivery_status] IN {
+        "Slightly Delayed",
+        "Significantly Delayed"
+    }
+)
+
+
+Delivery_Period_Value | Delivery Measures | 
+ var selected_period = [Selected_Period]
+ var selected_month = [YTD_Month]
+ var Start_Index = selected_month - selected_period
+
+var Period_Value = CALCULATE([Total_Orders],'Calendar'[MonthIndex]>= Start_Index,
+'Calendar'[MonthIndex]< selected_month) 
+
+RETURN IF([Selected_Period] = 0, [Delivery_YTD], Period_Value)
+
+Early Delivery % | Delivery Measures | 
+DIVIDE(
+    CALCULATE(
+        COUNT(Delivery[order_id]),
+        Delivery[delivery_time_minutes] < 0
+    ),
+    [Total_Orders],
+    0
+)
+
+
+Delivery Row Color | Delivery Measures | 
+SWITCH(
+    TRUE(),
+    MAX(MasterTable[delivery_time_minutes]) > 10, "#FF4C4C",   -- Red
+    MAX(MasterTable[delivery_time_minutes]) >= 6, "#FFD966",  -- Yellow
+    BLANK()
+)
+
+
+TopN_Area_by_Delay | Delivery Measures | 
+var rank_value = RANKX(ALL(MasterTable[area]), [Delivery_Period_Value],,DESC)
+var _rank = SELECTEDVALUE(Rank_Table[Value])
+var Rank_Top_N_Value =  IF(rank_value<= _rank, [Delivery_Period_Value], BLANK())
+
+RETURN IF(_rank = 0, [Delivery_Period_Value],Rank_Top_N_Value)
+
+Delay_Area_rank_title | Delivery Measures | 
+VAR _rank = SELECTEDVALUE(Rank_Table[Value], 0)
+
+RETURN
+IF(
+    _rank = 0,
+    "Areas Ranked by Total Delivery Delay (Minutes)",
+    "Top " & _rank & " Areas by Total Delivery Delay (Minutes)"
+)
+
+
+Delivery_YTD | Delivery | var YTD_SYS_Month = [YTD_Month]
+RETURN
+CALCULATE([Total_Orders],'Calendar'[MonthIndex]<=YTD_SYS_Month)
+
